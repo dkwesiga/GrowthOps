@@ -6,9 +6,10 @@
 // here while preserving the original URL, so the Express router below matches
 // exactly as it does in local development.
 //
-// An Express app is itself a (req, res) handler, so exporting it as the default
-// export is all @vercel/node needs.
-import express from "express";
+// We export an explicit (req, res) handler that delegates to the Express app,
+// rather than exporting the app directly — @vercel/node invokes the default
+// export as a plain request handler, and this leaves no ambiguity.
+import express, { type Request, type Response } from "express";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerOAuthRoutes } from "../server/_core/oauth";
 import { registerStorageProxy } from "../server/_core/storageProxy";
@@ -19,6 +20,12 @@ const app = express();
 
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
+
+// Dependency-free health check — no tRPC/DB/context — useful to confirm the
+// function initializes and to identify which deployment is live.
+app.get("/api/health", (_req: Request, res: Response) => {
+  res.json({ ok: true, ts: Date.now() });
+});
 
 registerStorageProxy(app);
 registerOAuthRoutes(app);
@@ -31,4 +38,6 @@ app.use(
   })
 );
 
-export default app;
+export default function handler(req: Request, res: Response) {
+  return app(req, res);
+}
