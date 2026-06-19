@@ -17,4 +17,9 @@ export const ENV = {
   // Optional attribution headers OpenRouter uses for rankings/analytics.
   llmReferer: process.env.OPENROUTER_REFERER ?? "https://growthops.ai",
   llmTitle: process.env.OPENROUTER_TITLE ?? "GrowthOps AI",
+  // Supabase Auth — used to verify the access token a signed-in client sends
+  // when bridging a Supabase session into our own session cookie.
+  supabaseUrl: process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL ?? "",
+  supabaseAnonKey:
+    process.env.SUPABASE_ANON_KEY ?? process.env.VITE_SUPABASE_ANON_KEY ?? "",
 };
