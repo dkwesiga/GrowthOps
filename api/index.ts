@@ -1,52 +1,52 @@
 // Vercel serverless entry point.
 //
-// Imports are deferred into buildApp() inside a try/catch so any
-// initialization/import failure is returned in the HTTP response body (and
-// logged) instead of an opaque FUNCTION_INVOCATION_FAILED.
+// Static top-level imports let esbuild bundle everything at build time so
+// Vercel never has to resolve modules at runtime. The try/catch around
+// route setup still surfaces any initialization error in the HTTP response.
 
-let appPromise: Promise<(req: unknown, res: unknown) => void> | null = null;
+import express from "express";
+import { createExpressMiddleware } from "@trpc/server/adapters/express";
+import { registerOAuthRoutes } from "../server/_core/oauth";
+import { registerStorageProxy } from "../server/_core/storageProxy";
+import { appRouter } from "../server/routers";
+import { createContext } from "../server/_core/context";
 
-async function buildApp() {
-  const express = (await import("express")).default;
-  const { createExpressMiddleware } = await import(
-    "@trpc/server/adapters/express"
-  );
-  const { registerOAuthRoutes } = await import("../server/_core/oauth");
-  const { registerStorageProxy } = await import("../server/_core/storageProxy");
-  const { appRouter } = await import("../server/routers");
-  const { createContext } = await import("../server/_core/context");
+let app: ReturnType<typeof express> | null = null;
+let initError: Error | null = null;
 
-  const app = express();
+try {
+  app = express();
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
+
   app.get("/api/health", (_req, res) => {
     res.json({ ok: true, ts: Date.now() });
   });
+
   registerStorageProxy(app);
   registerOAuthRoutes(app);
   app.use(
     "/api/trpc",
     createExpressMiddleware({ router: appRouter, createContext })
   );
-  return app as unknown as (req: unknown, res: unknown) => void;
+} catch (err: any) {
+  console.error("[api] setup failed:", err);
+  initError = err;
 }
 
-export default async function handler(req: any, res: any) {
-  try {
-    if (!appPromise) appPromise = buildApp();
-    const app = await appPromise;
-    return app(req, res);
-  } catch (err: any) {
-    appPromise = null;
-    console.error("[api] init failed:", err);
+export default function handler(req: any, res: any) {
+  if (initError || !app) {
+    console.error("[api] handler called but app failed to init:", initError);
     res.statusCode = 500;
     res.setHeader("content-type", "application/json");
     res.end(
       JSON.stringify({
-        initError: String(err?.message ?? err),
-        code: err?.code ?? null,
-        stack: String(err?.stack ?? "").split("\n").slice(0, 6),
+        initError: String(initError?.message ?? "App failed to initialize"),
+        code: (initError as any)?.code ?? null,
+        stack: String(initError?.stack ?? "").split("\n").slice(0, 8),
       })
     );
+    return;
   }
+  app(req, res);
 }
